@@ -1,0 +1,112 @@
+
+services:
+  # ==========================================
+  # SMART KOST - LARAVEL APPLICATION
+  # ==========================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: smartkost_app
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:8080
+
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: smart_kost
+      DB_USERNAME: smartkost_user
+      DB_PASSWORD: ${DOCKER_DB_PASSWORD:?DOCKER_DB_PASSWORD belum diisi}
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    volumes:
+      - app_storage:/var/www/html/storage
+      - app_public:/var/www/html/public
+
+    networks:
+      - smartkost_network
+
+  # ==========================================
+  # NGINX WEB SERVER
+  # ==========================================
+  nginx:
+    image: nginx:1.27-alpine
+
+    container_name: smartkost_nginx
+    restart: unless-stopped
+
+    ports:
+      - "8080:80"
+
+    volumes:
+      - app_public:/var/www/html/public:ro
+      - app_storage:/var/www/html/storage:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+    depends_on:
+      - app
+
+    networks:
+      - smartkost_network
+
+  # ==========================================
+  # MARIADB DATABASE
+  # ==========================================
+  db:
+    image: mariadb:10.4.32
+
+    container_name: smartkost_db
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DOCKER_DB_ROOT_PASSWORD:?DOCKER_DB_ROOT_PASSWORD belum diisi}
+      MYSQL_DATABASE: smart_kost
+      MYSQL_USER: smartkost_user
+      MYSQL_PASSWORD: ${DOCKER_DB_PASSWORD:?DOCKER_DB_PASSWORD belum diisi}
+
+    ports:
+      - "3307:3306"
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./smart_kost.sql:/docker-entrypoint-initdb.d/01-smart_kost.sql:ro
+
+    healthcheck:
+      test:
+        - CMD
+        - healthcheck.sh
+        - --connect
+        - --innodb_initialized
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+    networks:
+      - smartkost_network
+
+# ==========================================
+# PERSISTENT VOLUMES
+# ==========================================
+volumes:
+  mysql_data:
+  app_storage:
+  app_public:
+
+# ==========================================
+# DOCKER NETWORK
+# ==========================================
+networks:
+  smartkost_network:
+    driver: bridge
